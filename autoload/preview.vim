@@ -380,566 +380,590 @@ function! preview#taglist(pattern)
                         endif
                     endif
                 endif
-                end
-            endif
-        endfor
-        return ftags
-    endfunc
-
-
-    "----------------------------------------------------------------------
-    " easy tagname
-    "----------------------------------------------------------------------
-    function! preview#tagfind(tagname)
-        let pattern = escape(a:tagname, '[\*~^')
-        let result = preview#taglist("^". pattern . "$")
-        if type(result) == 0 || (type(result) == 3 && result == [])
-            if pattern !~ '^\(catch\|if\|for\|while\|switch\)$'
-                let result = preview#taglist('::'. pattern .'$')
             endif
         endif
-        if type(result) == 0 || (type(result) == 3 && result == [])
-            return []
+    endfor
+    return ftags
+endfunc
+
+
+"----------------------------------------------------------------------
+" easy tagname
+"----------------------------------------------------------------------
+function! preview#tagfind(tagname)
+    let pattern = escape(a:tagname, '[\*~^')
+    let result = preview#taglist("^". pattern . "$")
+    if type(result) == 0 || (type(result) == 3 && result == [])
+        if pattern !~ '^\(catch\|if\|for\|while\|switch\)$'
+            let result = preview#taglist('::'. pattern .'$')
         endif
-        let final = []
-        let check = {}
-        for item in result
-            if item.baditem != 0
-                continue
-            endif
-            " remove duplicated tags
-            let signature = get(item, 'name', '') . ':'
-            let signature .= get(item, 'cmd', '') . ':'
-            let signature .= get(item, 'kind', '') . ':'
-            let signature .= get(item, 'line', '') . ':'
-            let signature .= get(item, 'filename', '')
-            if !has_key(check, signature)
-                let final += [item]
-                let check[signature] = 1
-            endif
-        endfor
-        return final
-    endfunc
-
-
-    "----------------------------------------------------------------------
-    " highlight name
-    "----------------------------------------------------------------------
-    if !exists('g:preview#highlight')
-        let g:preview#highlight = 'Search'
     endif
+    if type(result) == 0 || (type(result) == 3 && result == [])
+        return []
+    endif
+    let final = []
+    let check = {}
+    for item in result
+        if item.baditem != 0
+            continue
+        endif
+        " remove duplicated tags
+        let signature = get(item, 'name', '') . ':'
+        let signature .= get(item, 'cmd', '') . ':'
+        let signature .= get(item, 'kind', '') . ':'
+        let signature .= get(item, 'line', '') . ':'
+        let signature .= get(item, 'filename', '')
+        if !has_key(check, signature)
+            let final += [item]
+            let check[signature] = 1
+        endif
+    endfor
+    return final
+endfunc
 
 
-    "----------------------------------------------------------------------
-    " display matched tag in the preview window
-    "----------------------------------------------------------------------
-    function! preview#preview_tag(tagname)
-        if &previewwindow
-            return 0
-        endif
-        let uid = preview#window_uid('%', '%')
-        let pid = preview#preview_check()
-        let opt = {"tagname":""}
-        let varname = 'preview_preview_tag_cache'
-        let reuse = 0
-        let index = 0
-        if pid > 0
-            let [l:tabnr, l:winnr] = preview#window_find(pid)
-            let saveopt = gettabwinvar(l:tabnr, l:winnr, varname)
-            if type(saveopt) == type({})
-                let l:tagname = get(saveopt, 'tagname', '')
-                if l:tagname == a:tagname
-                    let opt = saveopt
-                    let reuse = 1
-                endif
+"----------------------------------------------------------------------
+" highlight name
+"----------------------------------------------------------------------
+if !exists('g:preview#highlight')
+    let g:preview#highlight = 'Search'
+endif
+
+
+"----------------------------------------------------------------------
+" display matched tag in the preview window
+"----------------------------------------------------------------------
+function! preview#preview_tag(tagname)
+    if &previewwindow
+        return 0
+    endif
+    let uid = preview#window_uid('%', '%')
+    let pid = preview#preview_check()
+    let opt = {"tagname":""}
+    let varname = 'preview_preview_tag_cache'
+    let reuse = 0
+    let index = 0
+    if pid > 0
+        let [l:tabnr, l:winnr] = preview#window_find(pid)
+        let saveopt = gettabwinvar(l:tabnr, l:winnr, varname)
+        if type(saveopt) == type({})
+            let l:tagname = get(saveopt, 'tagname', '')
+            if l:tagname == a:tagname
+                let opt = saveopt
+                let reuse = 1
             endif
         endif
-        if reuse == 0
-            let opt.tagname = a:tagname
-            let opt.taglist = preview#tagfind(a:tagname)
-            let opt.index = 0
-            if len(opt.taglist) > 0 && pid > 0
-                call settabwinvar(l:tabnr, l:winnr, varname, opt)
-            endif
-        else
-            let opt.index += 1
-            if opt.index >= len(opt.taglist)
-                let opt.index = 0
-            endif
+    endif
+    if reuse == 0
+        let opt.tagname = a:tagname
+        let opt.taglist = preview#tagfind(a:tagname)
+        let opt.index = 0
+        if len(opt.taglist) > 0 && pid > 0
+            call settabwinvar(l:tabnr, l:winnr, varname, opt)
         endif
-        if len(opt.taglist) == 0
-            call preview#errmsg('E257: preview: tag not find "'. a:tagname.'"')
-            return 1
-        endif
+    else
+        let opt.index += 1
         if opt.index >= len(opt.taglist)
-            call preview#errmsg('E257: preview: index error')
-            return 2
+            let opt.index = 0
         endif
-        let taginfo = opt.taglist[opt.index]
-        let filename = taginfo.filename
-        if !filereadable(filename)
-            call preview#errmsg('E484: Can not open file '.filename)
-            return 3
-        endif
-        if pid == 0
-            let pid = preview#preview_open()
-            let [l:tabnr, l:winnr] = preview#window_find(pid)
-        endif
-        call settabwinvar(l:tabnr, l:winnr, varname, opt)
-        call preview#window_goto_uid(uid)
-        call preview#window_saveview()
-        call preview#window_goto_tabwin(l:tabnr, l:winnr)
-        silent exec 'e! '.fnameescape(filename)
-        call preview#window_loadview()
-        if &previewwindow
-            match none
-        endif
-        normal! gg
-        if has_key(taginfo, 'line')
-            silent! exec "".taginfo.line
-        elseif has_key(taginfo, 'cmd')
-            silent! exec "1"
-            silent! exec escape(taginfo.cmd, '*')
-            silent! exec "nohl"
-            " unsilent echom taginfo.cmd
-        endif
-        if g:preview#highlight != ''
-            call search("$", "b")
-            call search(escape(a:tagname, '[\*~^'))
-            let cmd = 'match ' . g:preview#highlight
-            exe cmd. ' "\%' . line(".") . 'l\%' . col(".") . 'c\k*"'
-        endif
-        call preview#window_up(0)
-        call preview#window_goto_uid(uid)
-        let text = taginfo.name
-        let text.= ' ('.(opt.index + 1).'/'.len(opt.taglist).') '
-        let text.= filename
-        if has_key(taginfo, 'line')
-            let text .= ':'.taginfo.line
-        endif
-        call preview#cmdmsg(text, 1)
-    endfunc
-
-
-    "----------------------------------------------------------------------
-    " display preview file
-    "----------------------------------------------------------------------
-    function! preview#preview_edit(bufnr, filename, line, cmd, nohl)
-        let uid = preview#window_uid('%', '%')
+    endif
+    if len(opt.taglist) == 0
+        call preview#errmsg('E257: preview: tag not find "'. a:tagname.'"')
+        return 1
+    endif
+    if opt.index >= len(opt.taglist)
+        call preview#errmsg('E257: preview: index error')
+        return 2
+    endif
+    let taginfo = opt.taglist[opt.index]
+    let filename = taginfo.filename
+    if !filereadable(filename)
+        call preview#errmsg('E484: Can not open file '.filename)
+        return 3
+    endif
+    if pid == 0
         let pid = preview#preview_open()
         let [l:tabnr, l:winnr] = preview#window_find(pid)
-        call preview#window_goto_tabwin(l:tabnr, l:winnr)
-        call preview#window_saveview()
-        if a:bufnr <= 0
-            silent exec "e! ".fnameescape(a:filename)
-        else
-            if winbufnr('%') != a:bufnr
-                silent exec "b! ".a:bufnr
-            endif
-        endif
-        call preview#window_loadview()
-        if a:line > 0
-            noautocmd exec "".a:line
-        endif
-        if a:cmd != ''
-            noautocmd exec a:cmd
-        endif
-        call preview#window_up((a:line > 0 || a:cmd != '') && a:nohl == 0)
-        call preview#window_goto_uid(uid)
-    endfunc
+    endif
+    call settabwinvar(l:tabnr, l:winnr, varname, opt)
+    call preview#window_goto_uid(uid)
+    call preview#window_saveview()
+    call preview#window_goto_tabwin(l:tabnr, l:winnr)
+    silent exec 'e! '.fnameescape(filename)
+    call preview#window_loadview()
+    if &previewwindow
+        match none
+    endif
+    normal! gg
+    if has_key(taginfo, 'line')
+        silent! exec "".taginfo.line
+    elseif has_key(taginfo, 'cmd')
+        silent! exec "1"
+        silent! exec escape(taginfo.cmd, '*')
+        silent! exec "nohl"
+        " unsilent echom taginfo.cmd
+    endif
+    if g:preview#highlight != ''
+        call search("$", "b")
+        call search(escape(a:tagname, '[\*~^'))
+        let cmd = 'match ' . g:preview#highlight
+        exe cmd. ' "\%' . line(".") . 'l\%' . col(".") . 'c\k*"'
+    endif
+    call preview#window_up(0)
+    call preview#window_goto_uid(uid)
+    let text = taginfo.name
+    let text.= ' ('.(opt.index + 1).'/'.len(opt.taglist).') '
+    let text.= filename
+    if has_key(taginfo, 'line')
+        let text .= ':'.taginfo.line
+    endif
+    call preview#cmdmsg(text, 1)
+endfunc
 
 
-    "----------------------------------------------------------------------
-    " goto preview file
-    "----------------------------------------------------------------------
-    function! preview#preview_goto(cmd)
-        let uid = preview#window_uid('%', '%')
-        let pid = preview#preview_check()
-        if pid == 0 || &previewwindow != 0 || uid == pid
+"----------------------------------------------------------------------
+" display preview file
+"----------------------------------------------------------------------
+function! preview#preview_edit(bufnr, filename, line, cmd, nohl)
+    let uid = preview#window_uid('%', '%')
+    let pid = preview#preview_open()
+    let [l:tabnr, l:winnr] = preview#window_find(pid)
+    call preview#window_goto_tabwin(l:tabnr, l:winnr)
+    call preview#window_saveview()
+    if a:bufnr <= 0
+        silent exec "e! ".fnameescape(a:filename)
+    else
+        if winbufnr('%') != a:bufnr
+            silent exec "b! ".a:bufnr
+        endif
+    endif
+    call preview#window_loadview()
+    if a:line > 0
+        noautocmd exec "".a:line
+    endif
+    if a:cmd != ''
+        noautocmd exec a:cmd
+    endif
+    call preview#window_up((a:line > 0 || a:cmd != '') && a:nohl == 0)
+    call preview#window_goto_uid(uid)
+endfunc
+
+
+"----------------------------------------------------------------------
+" goto preview file
+"----------------------------------------------------------------------
+function! preview#preview_goto(cmd)
+    let uid = preview#window_uid('%', '%')
+    let pid = preview#preview_check()
+    if pid == 0 || &previewwindow != 0 || uid == pid
+        exec "norm! \<esc>"
+        return
+    endif
+    if index(['quickfix', 'help', 'nofile'], &buftype) >= 0
+        if a:mode == '' || a:mode == '0' || a:mode == '!'
             exec "norm! \<esc>"
             return
         endif
-        if index(['quickfix', 'help', 'nofile'], &buftype) >= 0
-            if a:mode == '' || a:mode == '0' || a:mode == '!'
-                exec "norm! \<esc>"
-                return
-            endif
-        endif
-        let [l:tabnr, l:winnr] = preview#window_find(pid)
-        silent! wincmd P
-        let l:bufnr = winbufnr(l:winnr)
-        let l:bufname = bufname(l:bufnr)
-        let l:line = line('.')
-        call preview#window_goto_uid(uid)
-        silent exec a:cmd.' '.fnameescape(l:bufname)
-        if winbufnr('%') == l:bufnr
-            silent exec ''.l:line
-            call preview#window_up(0)
-        endif
-    endfunc
+    endif
+    let [l:tabnr, l:winnr] = preview#window_find(pid)
+    silent! wincmd P
+    let l:bufnr = winbufnr(l:winnr)
+    let l:bufname = bufname(l:bufnr)
+    let l:line = line('.')
+    call preview#window_goto_uid(uid)
+    silent exec a:cmd.' '.fnameescape(l:bufname)
+    if winbufnr('%') == l:bufnr
+        silent exec ''.l:line
+        call preview#window_up(0)
+    endif
+endfunc
 
 
-    "----------------------------------------------------------------------
-    " display quickfix item in preview
-    "----------------------------------------------------------------------
-    function! preview#preview_quickfix(linenr)
-        let linenr = (a:linenr > 0)? a:linenr : line('.')
-        let qflist = getqflist()
-        if linenr < 1 || linenr > len(qflist)
-            exec "norm! \<esc>"
-            return ""
-        endif
-        let entry = qflist[linenr - 1]
-        unlet qflist
-        if entry.valid
-            if entry.bufnr > 0
-                call preview#preview_edit(entry.bufnr, '', entry.lnum, '', 0)
-                let text = 'Preview: '.bufname(entry.bufnr)
-                let text.= ' ('.entry.lnum.')'
-                call preview#cmdmsg(text, 1)
-            else
-                exec "norm! \<esc>"
-            endif
+"----------------------------------------------------------------------
+" display quickfix item in preview
+"----------------------------------------------------------------------
+function! preview#preview_quickfix(linenr)
+    let linenr = (a:linenr > 0)? a:linenr : line('.')
+    let qflist = getqflist()
+    if linenr < 1 || linenr > len(qflist)
+        exec "norm! \<esc>"
+        return ""
+    endif
+    let entry = qflist[linenr - 1]
+    unlet qflist
+    if entry.valid
+        if entry.bufnr > 0
+            call preview#preview_edit(entry.bufnr, '', entry.lnum, '', 0)
+            let text = 'Preview: '.bufname(entry.bufnr)
+            let text.= ' ('.entry.lnum.')'
+            call preview#cmdmsg(text, 1)
         else
             exec "norm! \<esc>"
         endif
-        return ""
-    endfunc
+    else
+        exec "norm! \<esc>"
+    endif
+    return ""
+endfunc
 
 
-    "----------------------------------------------------------------------
-    " function signature
-    "----------------------------------------------------------------------
-    function! preview#function_signature(funname, fn_only, filetype)
-        let tags = preview#tagfind(a:funname)
-        let funpat = escape(a:funname, '[\*~^')
-        let fill_tag = []
-        let ft = (a:filetype == '')? &filetype : a:filetype
-        for i in tags
-            if !has_key(i, 'name')
+"----------------------------------------------------------------------
+" function signature
+"----------------------------------------------------------------------
+function! preview#function_signature(funname, fn_only, filetype)
+    let tags = preview#tagfind(a:funname)
+    let funpat = escape(a:funname, '[\*~^')
+    let fill_tag = []
+    let ft = (a:filetype == '')? &filetype : a:filetype
+    for i in tags
+        if !has_key(i, 'name')
+            continue
+        endif
+        if has_key(i, 'language')
+        endif
+        if has_key(i, 'filename') && ft != '*'
+            let ename = tolower(fnamemodify(i.filename, ':e'))
+            let c = ['c', 'cpp', 'cc', 'cxx', 'h', 'hpp', 'hh', 'm', 'mm']
+            if index(['c', 'cpp', 'objc', 'objcpp'], ft) >= 0
+                if index(c, ename) < 0
+                    continue
+                endif
+            elseif ft == 'python'
+                if index(['py', 'pyw'], ename) < 0
+                    continue
+                endif
+            elseif ft == 'java' && ename != 'java'
                 continue
-            endif
-            if has_key(i, 'language')
-            endif
-            if has_key(i, 'filename') && ft != '*'
-                let ename = tolower(fnamemodify(i.filename, ':e'))
-                let c = ['c', 'cpp', 'cc', 'cxx', 'h', 'hpp', 'hh', 'm', 'mm']
-                if index(['c', 'cpp', 'objc', 'objcpp'], ft) >= 0
-                    if index(c, ename) < 0
-                        continue
-                    endif
-                elseif ft == 'python'
-                    if index(['py', 'pyw'], ename) < 0
-                        continue
-                    endif
-                elseif ft == 'java' && ename != 'java'
+            elseif ft == 'ruby' && ename != 'rb'
+                continue
+            elseif ft == 'vim' && ename != 'vim'
+                continue
+            elseif ft == 'cs' && ename != 'cs'
+                continue
+            elseif ft == 'php'
+                if index(['php', 'php4', 'php5', 'php6'], ename) < 0
                     continue
-                elseif ft == 'ruby' && ename != 'rb'
+                endif
+            elseif ft == 'javascript'
+                if index(['html', 'js', 'html5', 'xhtml', 'php'], ename) < 0
                     continue
-                elseif ft == 'vim' && ename != 'vim'
-                    continue
-                elseif ft == 'cs' && ename != 'cs'
-                    continue
-                elseif ft == 'php'
-                    if index(['php', 'php4', 'php5', 'php6'], ename) < 0
-                        continue
-                    endif
-                elseif ft == 'javascript'
-                    if index(['html', 'js', 'html5', 'xhtml', 'php'], ename) < 0
-                        continue
-                    endif
                 endif
             endif
-            if has_key(i, 'kind')
-                " p: prototype/procedure; f: function; m: member
-                if (a:fn_only == 0 || (i.kind == 'p' || i.kind == 'f') ||
-                            \ (i.kind == 'm' && has_key(i, 'cmd') &&
-                            \		match(i.cmd, '(') != -1)) &&
-                            \ i.name =~ funpat
-                    if ft != 'cpp' || !has_key(i, 'class') ||
-                                \ i.name !~ '::' || i.name =~ i.class
-                        let fill_tag += [i]
-                    endif
-                endif
-            else
-                if a:fn_only == 0 && i.name == a:funname
+        endif
+        if has_key(i, 'kind')
+            " p: prototype/procedure; f: function; m: member
+            if (a:fn_only == 0 || (i.kind == 'p' || i.kind == 'f') ||
+                        \ (i.kind == 'm' && has_key(i, 'cmd') &&
+                        \		match(i.cmd, '(') != -1)) &&
+                        \ i.name =~ funpat
+                if ft != 'cpp' || !has_key(i, 'class') ||
+                            \ i.name !~ '::' || i.name =~ i.class
                     let fill_tag += [i]
                 endif
             endif
-        endfor
-        let res = []
-        let check = {}
-        for i in fill_tag
-            if has_key(i, 'kind') && has_key(i, 'signature')
-                if i.cmd[:1] == '/^' && i.cmd[-2:] == '$/'
-                    let tmppat = substitute(escape(i.name,'[\*~^'),
-                                \ '^.*::','','')
-                    if ft == 'cpp'
-                        let tmppat = substitute(tmppat,'\<operator ',
-                                    \ 'operator\\s*','')
-                        let tmppat=tmppat . '\s*(.*'
-                        let tmppat='\([A-Za-z_][A-Za-z_0-9]*::\)*'.tmppat
-                    else
-                        let tmppat=tmppat . '\>.*'
-                    endif
-                    let name = substitute(i.cmd[2:-3],tmppat,'','').
-                                \ i.name . i.signature
-                    if i.kind == 'm'
-                        if has_key(i, 'class')
-                            let name = name . ' <-- class ' . i.class
-                        elseif has_key(i, 'struct')
-                            let name = name . ' <-- struct ' . i.struct
-                        elseif has_key(i, 'union')
-                            let name = name . ' <-- union ' . i.union
-                        endif
-                    endif
+        else
+            if a:fn_only == 0 && i.name == a:funname
+                let fill_tag += [i]
+            endif
+        endif
+    endfor
+    let res = []
+    let check = {}
+    for i in fill_tag
+        if has_key(i, 'kind') && has_key(i, 'signature')
+            if i.cmd[:1] == '/^' && i.cmd[-2:] == '$/'
+                let tmppat = substitute(escape(i.name,'[\*~^'),
+                            \ '^.*::','','')
+                if ft == 'cpp'
+                    let tmppat = substitute(tmppat,'\<operator ',
+                                \ 'operator\\s*','')
+                    let tmppat=tmppat . '\s*(.*'
+                    let tmppat='\([A-Za-z_][A-Za-z_0-9]*::\)*'.tmppat
                 else
-                    let name = i.name . i.signature
-                    if has_key(i, 'kind') && match('fm', i.kind) >= 0
-                        let sep = (ft == 'cpp' || ft == 'c')? '::' : '.'
-                        if has_key(i, 'class')
-                            let name = i.class . sep . name
-                        elseif has_key(i, 'struct')
-                            let name = i.struct . sep. name
-                        elseif has_key(i, 'union')
-                            let name = i.struct . sep. name
-                        endif
+                    let tmppat=tmppat . '\>.*'
+                endif
+                let name = substitute(i.cmd[2:-3],tmppat,'','').
+                            \ i.name . i.signature
+                if i.kind == 'm'
+                    if has_key(i, 'class')
+                        let name = name . ' <-- class ' . i.class
+                    elseif has_key(i, 'struct')
+                        let name = name . ' <-- struct ' . i.struct
+                    elseif has_key(i, 'union')
+                        let name = name . ' <-- union ' . i.union
                     endif
                 endif
-            elseif has_key(i, 'kind')
-                if i.kind == 'd'
-                    let name = 'macro '. i.name
-                elseif i.kind == 'c'
-                    let name = ((ft == 'vim')? 'command ' : 'class '). i.name
-                elseif i.kind == 's'
-                    let name = 'struct '. i.name
-                elseif i.kind == 'u'
-                    let name = 'union '. i.name
-                elseif (match('fpmvt', i.kind) != -1) &&
-                            \(has_key(i, 'cmd') && i.cmd[0] == '/')
-                    let tmppat = '\(\<'.i.name.'\>.\{-}\)'
-                    if index(['c', 'cpp', 'cs', 'java', 'javascript'], ft) >= 0
-                        " let tmppat = tmppat . ';.*'
-                    elseif ft == 'python' && (i.kind == 'm' || i.kind == 'f')
-                        let tmppat = tmppat . ':.*'
-                    elseif ft == 'tcl' && (i.kind == 'm' || i.kind == 'p')
-                        let tmppat = tmppat . '\({\)\?$'
+            else
+                let name = i.name . i.signature
+                if has_key(i, 'kind') && match('fm', i.kind) >= 0
+                    let sep = (ft == 'cpp' || ft == 'c')? '::' : '.'
+                    if has_key(i, 'class')
+                        let name = i.class . sep . name
+                    elseif has_key(i, 'struct')
+                        let name = i.struct . sep. name
+                    elseif has_key(i, 'union')
+                        let name = i.struct . sep. name
                     endif
-                    if i.kind == 'm' && &filetype == 'cpp'
-                        let tmppat=substitute(tmppat,'^\(.*::\)','\\(\1\\)\\?','')
-                    endif
-                    if match(i.cmd[2:-3], tmppat) != -1
-                        let name=substitute(i.cmd[2:-3], tmppat, '\1', '')
-                        if i.kind == 't' && name !~ '^\s*typedef\>'
-                            let name = 'typedef ' . i.name
-                        endif
-                    elseif i.kind == 't'
+                endif
+            endif
+        elseif has_key(i, 'kind')
+            if i.kind == 'd'
+                let name = 'macro '. i.name
+            elseif i.kind == 'c'
+                let name = ((ft == 'vim')? 'command ' : 'class '). i.name
+            elseif i.kind == 's'
+                let name = 'struct '. i.name
+            elseif i.kind == 'u'
+                let name = 'union '. i.name
+            elseif (match('fpmvt', i.kind) != -1) &&
+                        \(has_key(i, 'cmd') && i.cmd[0] == '/')
+                let tmppat = '\(\<'.i.name.'\>.\{-}\)'
+                if index(['c', 'cpp', 'cs', 'java', 'javascript'], ft) >= 0
+                    " let tmppat = tmppat . ';.*'
+                elseif ft == 'python' && (i.kind == 'm' || i.kind == 'f')
+                    let tmppat = tmppat . ':.*'
+                elseif ft == 'tcl' && (i.kind == 'm' || i.kind == 'p')
+                    let tmppat = tmppat . '\({\)\?$'
+                endif
+                if i.kind == 'm' && &filetype == 'cpp'
+                    let tmppat=substitute(tmppat,'^\(.*::\)','\\(\1\\)\\?','')
+                endif
+                if match(i.cmd[2:-3], tmppat) != -1
+                    let name=substitute(i.cmd[2:-3], tmppat, '\1', '')
+                    if i.kind == 't' && name !~ '^\s*typedef\>'
                         let name = 'typedef ' . i.name
-                    elseif i.kind == 'v'
-                        let name = 'var ' . i.name
-                    else
-                        let name = i.name
                     endif
-                    if i.kind == 'm'
-                        if has_key(i, 'class')
-                            let name = name . ' <-- class ' . i.class
-                        elseif has_key(i, 'struct')
-                            let name = name . ' <-- struct ' . i.struct
-                        elseif has_key(i, 'union')
-                            let name = name . ' <-- union ' . i.union
-                        endif
-                    endif
-                    let name = substitute(name, '^\s*\(.\{-}\)\s*$', '\1', '')
-                    if name[-1:] == ';'
-                        let name = name[0:-2]
-                    endif
+                elseif i.kind == 't'
+                    let name = 'typedef ' . i.name
+                elseif i.kind == 'v'
+                    let name = 'var ' . i.name
                 else
                     let name = i.name
+                endif
+                if i.kind == 'm'
+                    if has_key(i, 'class')
+                        let name = name . ' <-- class ' . i.class
+                    elseif has_key(i, 'struct')
+                        let name = name . ' <-- struct ' . i.struct
+                    elseif has_key(i, 'union')
+                        let name = name . ' <-- union ' . i.union
+                    endif
+                endif
+                let name = substitute(name, '^\s*\(.\{-}\)\s*$', '\1', '')
+                if name[-1:] == ';'
+                    let name = name[0:-2]
                 endif
             else
                 let name = i.name
             endif
-            let name = substitute(name, '^\s\+', '', '')
-            let name = substitute(name, '\s\+$', '', '')
-            let name = substitute(name, '\s\+', ' ', 'g')
-            let i.func_prototype = name
-            let file_line = ''
-            if has_key(i, 'filename')
-                let file_line = fnamemodify(i.filename, ':t')
-                if has_key(i, 'line')
-                    let file_line .= ':'. i.line
-                elseif i.cmd > 0
-                    let file_line .= ':'. i.cmd
-                    if i.cmd =~ '^\s*\d\+\s*$'
-                        let i.line = str2nr(i.cmd)
-                    endif
-                endif
-            endif
-            let i.file_line = file_line
-            let res += [i]
-        endfor
-        let index = 1
-        for i in res
-            let name = i.func_prototype
-            let file_line = i.file_line
-            let desc = name. ' ('.index.'/'.len(res).') '.file_line
-            let i.func_desc = desc
-            let index += 1
-        endfor
-        return res
-    endfunc
-
-
-    "----------------------------------------------------------------------
-    " function name normalize
-    "----------------------------------------------------------------------
-
-    " get function name
-    function! preview#function_name(text)
-        let name = substitute(a:text,'.\{-}\(\(\k\+::\)*\(\~\?\k*\|'.
-                    \'operator\s\+new\(\[]\)\?\|'.
-                    \'operator\s\+delete\(\[]\)\?\|'.
-                    \'operator\s*[[\]()+\-*/%<>=!~\^&|]\+'.
-                    \'\)\)\s*$','\1','')
-        if name =~ '\<operator\>'  " tags have exactly one space after 'operator'
-            let name = substitute(name,'\<operator\s*','operator ','')
-        endif
-        return name
-    endfunc
-
-    " guess function names
-    function! preview#function_guess(text)
-        let size = len(a:text)
-        while size > 0
-            if index(['(', ')', ',', ' ', "\t"], a:text[size - 1]) >= 0
-                let size -= 1
-            else
-                break
-            endif
-        endwhile
-        let limit = (size == 0)? 0 : size - 1
-        return preview#function_name(a:text[0:limit])
-    endfunc
-
-
-    "----------------------------------------------------------------------
-    " function next
-    "----------------------------------------------------------------------
-    function! preview#function_prototype(funcname, filetype)
-        let ft = (a:filetype == '')? &filetype : a:filetype
-        if !exists('w:preview_prototype_cache')
-            let w:preview_prototype_cache = { 'name': '', 'index': 0, 'data': [] }
-            let w:preview_prototype_cache.ft = ''
-        endif
-        let proto = w:preview_prototype_cache
-        if proto.name != a:funcname || proto.ft != ft
-            let res = preview#function_signature(a:funcname, 0, ft)
-            let proto.data = []
-            let proto.index = 0
-            let proto.name = a:funcname
-            let proto.ft = ft
-            let w:preview_prototype_cache = proto
-            let check = {}
-            for item in res
-                let sign = item.func_prototype . ':' . item.file_line
-                if !has_key(check, sign)
-                    let proto.data += [item.func_desc]
-                    let check[sign] = 1
-                endif
-            endfor
-        endif
-        if len(proto.data) == 0
-            unlet w:preview_prototype_cache
-            return ''
-        endif
-        let text = proto.data[proto.index]
-        let text = substitute(text, '^\s*', '', '')
-        let proto.index += 1
-        if proto.index >= len(proto.data)
-            let proto.index = 0
-            unlet w:preview_prototype_cache
-        endif
-        return text
-    endfunc
-
-
-    "----------------------------------------------------------------------
-    " list tags in quickfix window
-    "----------------------------------------------------------------------
-    function! preview#quickfix_list(name, fn_only, filetype)
-        let res = preview#function_signature(a:name, a:fn_only, a:filetype)
-        if len(res) == 0
-            call preview#errmsg('E426: tag not found: '. a:name)
-            return 0
-        endif
-        cexpr ""
-        let output = []
-        for item in res
-            let text = item.filename . ':' . item.line . ': '
-            let text .= '<<' . a:name . '>> ' . item.func_prototype
-            let output += [text]
-        endfor
-        caddexpr output
-        return len(res)
-    endfunc
-
-
-    "----------------------------------------------------------------------
-    " prototype
-    "----------------------------------------------------------------------
-    function! preview#function_define(name)
-        let line = getline('.')
-        let pos = col('.') - 1
-        let endpos = match(line, '\W', pos)
-        if endpos != -1 && &filetype == 'cpp'
-            let word = expand('<cword>')
-            if word == 'operator'
-                if line[endpos:] =~ '^\s*\(new\(\[]\)\?\|delete\(\[]\)\?\|[[\]'
-                            \.'+\-*/%<>=!~\^&|]\+\|()\)'
-                    let endpos = matchend(line, '^\s*\(new\(\[]\)\?\|delete\(\['
-                                \.']\)\?\|[[\]+\-*/%<>=!~\^&|]\+\|()\)', endpos)
-                endif
-            elseif word == 'new' || word == 'delete'
-                if line[:endpos + 1] =~ 'operator\s\+\(new\|delete\)\[]$'
-                    let endpos = endpos + 2
-                endif
-            endif
-        endif
-        if endpos != -1
-            let endpos = endpos - 1
-        endif
-        if a:name == ''
-            let name = preview#function_guess(line[0:endpos])
-        elseif a:name == '<?>'
-            let name = expand('<cword>')
         else
-            let name = a:name
+            let name = i.name
         endif
-        if name == ''
-            return ''
+        let name = substitute(name, '^\s\+', '', '')
+        let name = substitute(name, '\s\+$', '', '')
+        let name = substitute(name, '\s\+', ' ', 'g')
+        let i.func_prototype = name
+        let file_line = ''
+        if has_key(i, 'filename')
+            let file_line = fnamemodify(i.filename, ':t')
+            if has_key(i, 'line')
+                let file_line .= ':'. i.line
+            elseif i.cmd > 0
+                let file_line .= ':'. i.cmd
+                if i.cmd =~ '^\s*\d\+\s*$'
+                    let i.line = str2nr(i.cmd)
+                endif
+            endif
         endif
-        return preview#function_prototype(name, &filetype)
-    endfunc
+        let i.file_line = file_line
+        let res += [i]
+    endfor
+    let index = 1
+    for i in res
+        let name = i.func_prototype
+        let file_line = i.file_line
+        let desc = name. ' ('.index.'/'.len(res).') '.file_line
+        let i.func_desc = desc
+        let index += 1
+    endfor
+    return res
+endfunc
 
-    " function preview
-    function! preview#function_echo(name, nosc)
-        let text = preview#function_define(a:name)
-        if text == ''
-            return ''
+
+"----------------------------------------------------------------------
+" function name normalize
+"----------------------------------------------------------------------
+
+" get function name
+function! preview#function_name(text)
+    let name = substitute(a:text,'.\{-}\(\(\k\+::\)*\(\~\?\k*\|'.
+                \'operator\s\+new\(\[]\)\?\|'.
+                \'operator\s\+delete\(\[]\)\?\|'.
+                \'operator\s*[[\]()+\-*/%<>=!~\^&|]\+'.
+                \'\)\)\s*$','\1','')
+    if name =~ '\<operator\>'  " tags have exactly one space after 'operator'
+        let name = substitute(name,'\<operator\s*','operator ','')
+    endif
+    return name
+endfunc
+
+" guess function names
+function! preview#function_guess(text)
+    let size = len(a:text)
+    while size > 0
+        if index(['(', ')', ',', ' ', "\t"], a:text[size - 1]) >= 0
+            let size -= 1
+        else
+            break
         endif
-        if a:nosc != 0
-            set noshowmode
-        endif
-        call preview#cmdmsg(text, 1)
+    endwhile
+    let limit = (size == 0)? 0 : size - 1
+    return preview#function_name(a:text[0:limit])
+endfunc
+
+
+"----------------------------------------------------------------------
+" function next
+"----------------------------------------------------------------------
+function! preview#function_prototype(funcname, filetype)
+    let ft = (a:filetype == '')? &filetype : a:filetype
+    if !exists('w:preview_prototype_cache')
+        let w:preview_prototype_cache = { 'name': '', 'index': 0, 'data': [] }
+        let w:preview_prototype_cache.ft = ''
+    endif
+    let proto = w:preview_prototype_cache
+    if proto.name != a:funcname || proto.ft != ft
+        let res = preview#function_signature(a:funcname, 0, ft)
+        let proto.data = []
+        let proto.index = 0
+        let proto.name = a:funcname
+        let proto.ft = ft
+        let w:preview_prototype_cache = proto
+        let check = {}
+        for item in res
+            let sign = item.func_prototype . ':' . item.file_line
+            if !has_key(check, sign)
+                let proto.data += [item.func_desc]
+                let check[sign] = 1
+            endif
+        endfor
+    endif
+    if len(proto.data) == 0
+        unlet w:preview_prototype_cache
         return ''
-    endfunc
+    endif
+    let text = proto.data[proto.index]
+    let text = substitute(text, '^\s*', '', '')
+    let proto.index += 1
+    if proto.index >= len(proto.data)
+        let proto.index = 0
+        unlet w:preview_prototype_cache
+    endif
+    return text
+endfunc
 
-    " scroll previous window
-    function! preview#previous_scroll(offset)
-        if winnr('$') <= 1
-            return
+
+"----------------------------------------------------------------------
+" list tags in quickfix window
+"----------------------------------------------------------------------
+function! preview#quickfix_list(name, fn_only, filetype)
+    let res = preview#function_signature(a:name, a:fn_only, a:filetype)
+    if len(res) == 0
+        call preview#errmsg('E426: tag not found: '. a:name)
+        return 0
+    endif
+    cexpr ""
+    let output = []
+    for item in res
+        let text = item.filename . ':' . item.line . ': '
+        let text .= '<<' . a:name . '>> ' . item.func_prototype
+        let output += [text]
+    endfor
+    caddexpr output
+    return len(res)
+endfunc
+
+
+"----------------------------------------------------------------------
+" prototype
+"----------------------------------------------------------------------
+function! preview#function_define(name)
+    let line = getline('.')
+    let pos = col('.') - 1
+    let endpos = match(line, '\W', pos)
+    if endpos != -1 && &filetype == 'cpp'
+        let word = expand('<cword>')
+        if word == 'operator'
+            if line[endpos:] =~ '^\s*\(new\(\[]\)\?\|delete\(\[]\)\?\|[[\]'
+                        \.'+\-*/%<>=!~\^&|]\+\|()\)'
+                let endpos = matchend(line, '^\s*\(new\(\[]\)\?\|delete\(\['
+                            \.']\)\?\|[[\]+\-*/%<>=!~\^&|]\+\|()\)', endpos)
+            endif
+        elseif word == 'new' || word == 'delete'
+            if line[:endpos + 1] =~ 'operator\s\+\(new\|delete\)\[]$'
+                let endpos = endpos + 2
+            endif
         endif
-        noautocmd silent! wincmd p
+    endif
+    if endpos != -1
+        let endpos = endpos - 1
+    endif
+    if a:name == ''
+        let name = preview#function_guess(line[0:endpos])
+    elseif a:name == '<?>'
+        let name = expand('<cword>')
+    else
+        let name = a:name
+    endif
+    if name == ''
+        return ''
+    endif
+    return preview#function_prototype(name, &filetype)
+endfunc
+
+" function preview
+function! preview#function_echo(name, nosc)
+    let text = preview#function_define(a:name)
+    if text == ''
+        return ''
+    endif
+    if a:nosc != 0
+        set noshowmode
+    endif
+    call preview#cmdmsg(text, 1)
+    return ''
+endfunc
+
+" scroll previous window
+function! preview#previous_scroll(offset)
+    if winnr('$') <= 1
+        return
+    endif
+    noautocmd silent! wincmd p
+    if a:offset == 1
+        exec "normal! \<c-d>"
+    elseif a:offset == -1
+        exec "normal! \<c-u>"
+    elseif a:offset >= 2
+        exec "normal! \<c-f>"
+    elseif a:offset <= -2
+        exec "normal! \<c-b>"
+    endif
+    noautocmd silent! wincmd p
+endfunc
+
+" scroll preview window
+function! preview#preview_scroll(offset)
+    let uid = preview#window_uid('%', '%')
+    let pid = preview#preview_check()
+    if pid <= 0
+        exec "norm! \<esc>"
+        return
+    endif
+    if uid != pid
+        noautocmd wincmd P
+    endif
+    if &previewwindow != 0
         if a:offset == 1
             exec "normal! \<c-d>"
         elseif a:offset == -1
@@ -949,34 +973,10 @@ function! preview#taglist(pattern)
         elseif a:offset <= -2
             exec "normal! \<c-b>"
         endif
-        noautocmd silent! wincmd p
-    endfunc
-
-    " scroll preview window
-    function! preview#preview_scroll(offset)
-        let uid = preview#window_uid('%', '%')
-        let pid = preview#preview_check()
-        if pid <= 0
-            exec "norm! \<esc>"
-            return
-        endif
-        if uid != pid
-            noautocmd wincmd P
-        endif
-        if &previewwindow != 0
-            if a:offset == 1
-                exec "normal! \<c-d>"
-            elseif a:offset == -1
-                exec "normal! \<c-u>"
-            elseif a:offset >= 2
-                exec "normal! \<c-f>"
-            elseif a:offset <= -2
-                exec "normal! \<c-b>"
-            endif
-        endif
-        if uid != pid
-            noautocmd wincmd p
-        endif
-    endfunc
+    endif
+    if uid != pid
+        noautocmd wincmd p
+    endif
+endfunc
 
 
