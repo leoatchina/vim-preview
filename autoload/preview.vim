@@ -11,6 +11,7 @@
 " window basic
 "----------------------------------------------------------------------
 
+let s:cmds = ["e", "tabe", "vsplit", "split"]
 " save all window's view
 function! preview#window_saveview()
     function! s:window_view_save()
@@ -552,37 +553,39 @@ endfunc
 "----------------------------------------------------------------------
 " goto preview file
 "----------------------------------------------------------------------
-function! preview#preview_goto(cmd)
-    let uid = preview#window_uid('%', '%')
-    let pid = preview#preview_check()
-    if pid == 0 || &previewwindow != 0 || uid == pid
-        exec "norm! \<esc>"
-        return
-    endif
-    if index(['quickfix', 'help', 'nofile'], &buftype) >= 0
-        if a:mode == '' || a:mode == '0' || a:mode == '!'
+function! preview#preview_goto(cmd, ...)
+    let bufnr = (a:0 > 0) ? a:1 : 0
+    if bufnr == 0
+        let uid = preview#window_uid('%', '%')
+        let pid = preview#preview_check()
+        if pid == 0 || &previewwindow != 0 || uid == pid
             exec "norm! \<esc>"
             return
         endif
+        let [l:tabnr, l:winnr] = preview#window_find(pid)
+        silent! wincmd P
+        let bufnr = winbufnr(l:winnr)
+    else
+        silent! wincmd P
     endif
-    let [l:tabnr, l:winnr] = preview#window_find(pid)
-    silent! wincmd P
-    let l:bufnr = winbufnr(l:winnr)
-    let l:bufname = bufname(l:bufnr)
+    let l:bufname = bufname(bufnr)
     let l:line = line('.')
-    call preview#window_goto_uid(uid)
+    silent! pclose
     silent exec a:cmd.' '.fnameescape(l:bufname)
-    if winbufnr('%') == l:bufnr
+    if winbufnr('%') == bufnr
         silent exec ''.l:line
         call preview#window_up(0)
     endif
 endfunc
 
-
 "----------------------------------------------------------------------
 " display quickfix item in preview
 "----------------------------------------------------------------------
-function! preview#preview_quickfix(linenr)
+function! preview#preview_quickfix(linenr, ...)
+    let cmd = (a:0 == 0) ? "" : trim(a:1)
+    if index(s:cmds, cmd) < 0
+        let cmd = ""
+    endif
     let linenr = (a:linenr > 0)? a:linenr : line('.')
     let qflist = getqflist()
     if linenr < 1 || linenr > len(qflist)
@@ -593,10 +596,20 @@ function! preview#preview_quickfix(linenr)
     unlet qflist
     if entry.valid
         if entry.bufnr > 0
-            call preview#preview_edit(entry.bufnr, '', entry.lnum, '', 0)
-            let text = 'Preview: '.bufname(entry.bufnr)
-            let text.= ' ('.entry.lnum.')'
-            call preview#cmdmsg(text, 1)
+            if cmd == ""
+                call preview#preview_edit(entry.bufnr, '', entry.lnum, "", 0)
+                let text = 'Preview: '.bufname(entry.bufnr)
+                let text.= ' ('.entry.lnum.')'
+                call preview#cmdmsg(text, 1)
+            else
+                let l:bufname = bufname(entry.bufnr)
+                silent! wincmd w
+                silent! pclose
+                silent exec cmd.' '.fnameescape(l:bufname)
+                if entry.lnum > 0
+                    noautocmd exec "" . entry.lnum
+                endif
+            endif
         else
             exec "norm! \<esc>"
         endif
@@ -605,7 +618,6 @@ function! preview#preview_quickfix(linenr)
     endif
     return ""
 endfunc
-
 
 "----------------------------------------------------------------------
 " function signature
@@ -866,10 +878,12 @@ endfunc
 "----------------------------------------------------------------------
 " list tags in quickfix window
 "----------------------------------------------------------------------
-function! preview#quickfix_list(name, fn_only, filetype)
+function! preview#quickfix_list(name, fn_only, filetype, ...)
     let res = preview#function_signature(a:name, a:fn_only, a:filetype)
     if len(res) == 0
-        call preview#errmsg('E426: tag not found: '. a:name)
+        if a:0 > 0 && a:1 != 0
+            call preview#errmsg('E426: tag not found: '. a:name)
+        endif
         return 0
     endif
     cexpr ""
@@ -882,7 +896,6 @@ function! preview#quickfix_list(name, fn_only, filetype)
     caddexpr output
     return len(res)
 endfunc
-
 
 "----------------------------------------------------------------------
 " prototype
